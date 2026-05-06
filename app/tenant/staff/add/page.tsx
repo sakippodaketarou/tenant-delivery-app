@@ -18,15 +18,15 @@ type StaffRow = {
   department: string | null;
 };
 
-export default function StaffAddPage() {
+export default function TenantStaffAddPage() {
   const router = useRouter();
 
   const [myProfile, setMyProfile] = useState<MyProfile | null>(null);
   const [staffList, setStaffList] = useState<StaffRow[]>([]);
 
   const [name, setName] = useState("");
-  const [department, setDepartment] = useState("");
   const [signature, setSignature] = useState("");
+  const [department, setDepartment] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -143,7 +143,7 @@ export default function StaffAddPage() {
     }
 
     alert(`スタッフを追加しました。\nQR値：${result.qr_value ?? "作成済み"}`);
-    router.push("/staff");
+    router.push("/tenant/staff");
   };
 
   return (
@@ -151,14 +151,14 @@ export default function StaffAddPage() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center justify-between rounded-2xl bg-white p-6 shadow">
           <div>
-            <h1 className="text-2xl font-bold">スタッフ追加</h1>
+            <h1 className="text-2xl font-bold">テナントスタッフ追加</h1>
             <p className="text-sm text-gray-500">
-              テナントスタッフのログインアカウントとQRコードを作成します。
+              自社スタッフのログインアカウントとQRコードを作成します。
             </p>
           </div>
 
           <button
-            onClick={() => router.push("/staff")}
+            onClick={() => router.push("/tenant/staff")}
             className="rounded-lg bg-black px-4 py-2 text-white"
           >
             戻る
@@ -188,6 +188,9 @@ export default function StaffAddPage() {
                   placeholder="例：山田"
                   className="w-full rounded-lg border p-3"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  QR値生成にも使います。短い名前や識別名がおすすめです。
+                </p>
               </div>
 
               <div>
@@ -196,19 +199,25 @@ export default function StaffAddPage() {
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
                   placeholder="例：管理部"
-                  list="department-options"
+                  list="tenant-department-options"
                   className="w-full rounded-lg border p-3"
                 />
 
-                <datalist id="department-options">
+                <datalist id="tenant-department-options">
                   {departmentOptions.map((department) => (
                     <option key={department} value={department} />
                   ))}
                 </datalist>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  既存部署は候補に表示されます。新しい部署名も入力できます。
+                </p>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-bold">メールアドレス</label>
+                <label className="mb-1 block text-sm font-bold">
+                  メールアドレス
+                </label>
                 <input
                   type="email"
                   value={email}
@@ -229,7 +238,9 @@ export default function StaffAddPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-bold">初期パスワード</label>
+                <label className="mb-1 block text-sm font-bold">
+                  初期パスワード
+                </label>
                 <input
                   type="password"
                   value={password}

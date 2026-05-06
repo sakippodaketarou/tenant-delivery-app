@@ -17,25 +17,8 @@ type Profile = {
   qr_value: string | null;
 };
 
-type DepartmentLocation = {
-  id: string;
-  company_id: string;
-  department: string;
-  location_id: string;
-  locations: {
-    id: string;
-    code: string;
-    name: string | null;
-  } | null;
-};
-
 type ScanItem = {
   recipient: Profile;
-  location: {
-    id: string;
-    code: string;
-    name: string | null;
-  };
   quantity: number;
 };
 
@@ -45,9 +28,6 @@ export default function RegisterPackagePage() {
 
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [departmentLocations, setDepartmentLocations] = useState<
-    DepartmentLocation[]
-  >([]);
 
   const [selectedCarrier, setSelectedCarrier] = useState<Carrier | null>(null);
   const [carrierScan, setCarrierScan] = useState("");
@@ -71,29 +51,13 @@ export default function RegisterPackagePage() {
       .select("id, company_id, name, department, qr_value")
       .order("name");
 
-    const { data: departmentLocationData } = await supabase
-      .from("department_locations")
-      .select(`
-        id,
-        company_id,
-        department,
-        location_id,
-        locations (
-          id,
-          code,
-          name
-        )
-      `);
-
     setCarriers(carrierData ?? []);
     setProfiles(profileData ?? []);
-    setDepartmentLocations(
-      (departmentLocationData ?? []) as unknown as DepartmentLocation[]
-    );
   };
 
   const handleCarrierScan = () => {
     const value = carrierScan.trim();
+
     if (!value) return;
 
     const carrier = carriers.find((c) => c.barcode_value === value);
@@ -118,6 +82,7 @@ export default function RegisterPackagePage() {
     }
 
     const value = staffScan.trim();
+
     if (!value) return;
 
     const recipient = profiles.find((p) => p.qr_value === value);
@@ -128,33 +93,9 @@ export default function RegisterPackagePage() {
       return;
     }
 
-    if (!recipient.department) {
-      alert(`${recipient.name} さんの部署が未設定です。`);
-      setStaffScan("");
-      return;
-    }
-
-    const departmentLocation = departmentLocations.find(
-      (item) =>
-        item.company_id === recipient.company_id &&
-        item.department === recipient.department
-    );
-
-    if (!departmentLocation?.locations) {
-      alert(
-        `${recipient.department} の保管ロケーションが未設定です。\n先に部署ロケーションを設定してください。`
-      );
-      setStaffScan("");
-      return;
-    }
-
-    const location = departmentLocation.locations;
-
     setItems((prev) => {
       const existingIndex = prev.findIndex(
-        (item) =>
-          item.recipient.id === recipient.id &&
-          item.location.id === location.id
+        (item) => item.recipient.id === recipient.id
       );
 
       if (existingIndex >= 0) {
@@ -169,7 +110,6 @@ export default function RegisterPackagePage() {
         ...prev,
         {
           recipient,
-          location,
           quantity: 1,
         },
       ];
@@ -222,7 +162,7 @@ export default function RegisterPackagePage() {
       company_id: item.recipient.company_id,
       recipient_user_id: item.recipient.id,
       carrier_id: selectedCarrier.id,
-      location_id: item.location.id,
+      location_id: null,
       quantity: item.quantity,
       status: "unreceived",
       registered_by: user.id,
@@ -254,6 +194,7 @@ export default function RegisterPackagePage() {
           <h1 className="text-2xl font-bold">荷捌き場 荷物登録</h1>
           <p className="mt-1 text-sm text-gray-500">
             配送会社QRを最初に1回読み取り、その後はスタッフQRだけを読み取ります。
+            ロケーションはあとから部署ごとに設定します。
           </p>
         </div>
 
@@ -304,7 +245,7 @@ export default function RegisterPackagePage() {
           />
 
           <p className="mt-3 text-sm text-gray-500">
-            スタッフの部署に設定された保管ロケーションへ自動登録されます。
+            同じスタッフQRを続けて読み取ると、個数が自動で加算されます。
           </p>
         </div>
 
@@ -336,7 +277,6 @@ export default function RegisterPackagePage() {
                 <tr className="border-b bg-gray-50 text-left">
                   <th className="p-3">宛先スタッフ</th>
                   <th className="p-3">部署</th>
-                  <th className="p-3">自動ロケーション</th>
                   <th className="p-3">個数</th>
                   <th className="p-3">操作</th>
                 </tr>
@@ -344,20 +284,9 @@ export default function RegisterPackagePage() {
 
               <tbody>
                 {items.map((item, index) => (
-                  <tr
-                    key={`${item.recipient.id}-${item.location.id}`}
-                    className="border-b"
-                  >
+                  <tr key={item.recipient.id} className="border-b">
                     <td className="p-3 font-bold">{item.recipient.name}</td>
                     <td className="p-3">{item.recipient.department ?? "-"}</td>
-                    <td className="p-3">
-                      {item.location.code}
-                      {item.location.name && (
-                        <span className="ml-2 text-xs text-gray-500">
-                          {item.location.name}
-                        </span>
-                      )}
-                    </td>
                     <td className="p-3 text-lg font-bold">{item.quantity}</td>
                     <td className="p-3">
                       <button

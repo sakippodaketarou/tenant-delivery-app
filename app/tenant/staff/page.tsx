@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
 import QRCode from "react-qr-code";
+import { supabase } from "@/lib/supabase/client";
+
+type MyProfile = {
+  id: string;
+  company_id: string;
+  name: string;
+  department: string | null;
+  role: string | null;
+};
 
 type StaffRow = {
   id: string;
   company_id: string;
   name: string;
+  signature: string | null;
   department: string | null;
   phone: string | null;
   email: string | null;
@@ -16,28 +25,55 @@ type StaffRow = {
   qr_value: string | null;
 };
 
-export default function StaffPage() {
+export default function TenantStaffPage() {
   const router = useRouter();
 
+  const [myProfile, setMyProfile] = useState<MyProfile | null>(null);
   const [staffList, setStaffList] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchStaff = async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, company_id, name, department, phone, email, role, qr_value")
-      .order("department")
-      .order("name");
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (error) {
-      alert("スタッフ取得エラー：" + error.message);
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    const { data: profileData, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, company_id, name, department, role")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profileData) {
+      alert("ログインユーザー情報の取得に失敗しました。");
       setLoading(false);
       return;
     }
 
-    setStaffList((data ?? []) as StaffRow[]);
+    setMyProfile(profileData as MyProfile);
+
+    const { data: staffData, error: staffError } = await supabase
+      .from("profiles")
+      .select(
+        "id, company_id, name, signature, department, phone, email, role, qr_value"
+      )
+      .eq("company_id", profileData.company_id)
+      .order("department")
+      .order("name");
+
+    if (staffError) {
+      alert("スタッフ取得エラー：" + staffError.message);
+      setLoading(false);
+      return;
+    }
+
+    setStaffList((staffData ?? []) as StaffRow[]);
     setLoading(false);
   };
 
@@ -45,8 +81,8 @@ export default function StaffPage() {
     fetchStaff();
   }, []);
 
-  const groupedByDepartment = staffList.reduce<Record<string, StaffRow[]>>(
-    (acc, staff) => {
+  const groupedByDepartment = useMemo(() => {
+    return staffList.reduce<Record<string, StaffRow[]>>((acc, staff) => {
       const department = staff.department || "未分類";
 
       if (!acc[department]) {
@@ -55,28 +91,34 @@ export default function StaffPage() {
 
       acc[department].push(staff);
       return acc;
-    },
-    {}
-  );
+    }, {});
+  }, [staffList]);
+
+  const canAddStaff =
+    myProfile?.role === "tenant_admin" ||
+    myProfile?.role === "admin" ||
+    myProfile?.role === "tenant_staff";
 
   return (
     <main className="min-h-screen bg-gray-100 p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex items-center justify-between rounded-2xl bg-white p-6 shadow">
           <div>
-            <h1 className="text-2xl font-bold">スタッフ管理</h1>
+            <h1 className="text-2xl font-bold">テナントスタッフ管理</h1>
             <p className="text-sm text-gray-500">
-              テナントスタッフの確認・追加・QRコード印刷ができます。
+              自社スタッフの確認・追加・QRコード印刷ができます。
             </p>
           </div>
 
           <div className="flex gap-3">
-            <button
-              onClick={() => router.push("/staff/add")}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-white"
-            >
-              スタッフ追加
-            </button>
+            {canAddStaff && (
+              <button
+                onClick={() => router.push("/tenant/staff/add")}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-white"
+              >
+                スタッフ追加
+              </button>
+            )}
 
             <button
               onClick={() => window.print()}
@@ -86,10 +128,10 @@ export default function StaffPage() {
             </button>
 
             <button
-              onClick={() => router.push("/home")}
+              onClick={() => router.push("/tenant/home")}
               className="rounded-lg bg-black px-4 py-2 text-white"
             >
-              ホームへ戻る
+              テナント画面へ戻る
             </button>
           </div>
         </div>
@@ -120,7 +162,7 @@ export default function StaffPage() {
                           className="rounded-2xl border bg-white p-5 shadow-sm"
                         >
                           <div className="flex gap-4">
-                            <div className="flex h-28 w-28 items-center justify-center rounded-xl border bg-white p-2">
+                            <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-xl border bg-white p-2">
                               {staff.qr_value ? (
                                 <QRCode
                                   value={staff.qr_value}
@@ -138,6 +180,10 @@ export default function StaffPage() {
                               <p className="text-lg font-bold">{staff.name}</p>
 
                               <p className="mt-1 text-sm text-gray-500">
+                                署名：{staff.signature ?? "-"}
+                              </p>
+
+                              <p className="text-sm text-gray-500">
                                 部署：{staff.department ?? "-"}
                               </p>
 
