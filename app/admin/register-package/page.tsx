@@ -9,13 +9,6 @@ type Carrier = {
   barcode_value: string;
 };
 
-type Location = {
-  id: string;
-  code: string;
-  name: string | null;
-  barcode_value: string;
-};
-
 type Profile = {
   id: string;
   company_id: string;
@@ -24,27 +17,41 @@ type Profile = {
   qr_value: string | null;
 };
 
+type DepartmentLocation = {
+  id: string;
+  company_id: string;
+  department: string;
+  location_id: string;
+  locations: {
+    id: string;
+    code: string;
+    name: string | null;
+  } | null;
+};
+
 type ScanItem = {
   recipient: Profile;
-  location: Location;
+  location: {
+    id: string;
+    code: string;
+    name: string | null;
+  };
   quantity: number;
 };
 
 export default function RegisterPackagePage() {
   const carrierInputRef = useRef<HTMLInputElement>(null);
-  const recipientInputRef = useRef<HTMLInputElement>(null);
-  const locationInputRef = useRef<HTMLInputElement>(null);
+  const staffInputRef = useRef<HTMLInputElement>(null);
 
   const [carriers, setCarriers] = useState<Carrier[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [departmentLocations, setDepartmentLocations] = useState<
+    DepartmentLocation[]
+  >([]);
 
   const [selectedCarrier, setSelectedCarrier] = useState<Carrier | null>(null);
-  const [selectedRecipient, setSelectedRecipient] = useState<Profile | null>(null);
-
   const [carrierScan, setCarrierScan] = useState("");
-  const [recipientScan, setRecipientScan] = useState("");
-  const [locationScan, setLocationScan] = useState("");
+  const [staffScan, setStaffScan] = useState("");
 
   const [items, setItems] = useState<ScanItem[]>([]);
 
@@ -59,24 +66,34 @@ export default function RegisterPackagePage() {
       .select("id, name, barcode_value")
       .order("name");
 
-    const { data: locationData } = await supabase
-      .from("locations")
-      .select("id, code, name, barcode_value")
-      .order("code");
-
     const { data: profileData } = await supabase
       .from("profiles")
       .select("id, company_id, name, department, qr_value")
       .order("name");
 
+    const { data: departmentLocationData } = await supabase
+      .from("department_locations")
+      .select(`
+        id,
+        company_id,
+        department,
+        location_id,
+        locations (
+          id,
+          code,
+          name
+        )
+      `);
+
     setCarriers(carrierData ?? []);
-    setLocations(locationData ?? []);
     setProfiles(profileData ?? []);
+    setDepartmentLocations(
+      (departmentLocationData ?? []) as unknown as DepartmentLocation[]
+    );
   };
 
   const handleCarrierScan = () => {
     const value = carrierScan.trim();
-
     if (!value) return;
 
     const carrier = carriers.find((c) => c.barcode_value === value);
@@ -89,83 +106,54 @@ export default function RegisterPackagePage() {
 
     setSelectedCarrier(carrier);
     setCarrierScan("");
-    setTimeout(() => recipientInputRef.current?.focus(), 100);
+    setTimeout(() => staffInputRef.current?.focus(), 100);
   };
 
-  const resetCarrier = () => {
-    if (items.length > 0) {
-      const ok = confirm(
-        "配送会社を変更すると、現在の読み取りリストがリセットされます。よろしいですか？"
-      );
-
-      if (!ok) return;
-    }
-
-    setSelectedCarrier(null);
-    setSelectedRecipient(null);
-    setItems([]);
-    setCarrierScan("");
-    setRecipientScan("");
-    setLocationScan("");
-    setTimeout(() => carrierInputRef.current?.focus(), 100);
-  };
-
-  const handleRecipientScan = () => {
-    const value = recipientScan.trim();
-
+  const handleStaffScan = () => {
     if (!selectedCarrier) {
-      alert("先に配送会社QRを読み取ってください");
-      setRecipientScan("");
+      alert("先に配送会社QRを読み取ってください。");
+      setStaffScan("");
       setTimeout(() => carrierInputRef.current?.focus(), 100);
       return;
     }
 
+    const value = staffScan.trim();
     if (!value) return;
 
     const recipient = profiles.find((p) => p.qr_value === value);
 
     if (!recipient) {
-      alert("宛先スタッフQRが見つかりません：" + value);
-      setRecipientScan("");
+      alert("スタッフQRが見つかりません：" + value);
+      setStaffScan("");
       return;
     }
 
-    setSelectedRecipient(recipient);
-    setRecipientScan("");
-    setTimeout(() => locationInputRef.current?.focus(), 100);
-  };
-
-  const handleLocationScan = () => {
-    const value = locationScan.trim();
-
-    if (!selectedCarrier) {
-      alert("先に配送会社QRを読み取ってください");
-      setLocationScan("");
-      setTimeout(() => carrierInputRef.current?.focus(), 100);
+    if (!recipient.department) {
+      alert(`${recipient.name} さんの部署が未設定です。`);
+      setStaffScan("");
       return;
     }
 
-    if (!selectedRecipient) {
-      alert("先に宛先スタッフQRを読み取ってください");
-      setLocationScan("");
-      setTimeout(() => recipientInputRef.current?.focus(), 100);
+    const departmentLocation = departmentLocations.find(
+      (item) =>
+        item.company_id === recipient.company_id &&
+        item.department === recipient.department
+    );
+
+    if (!departmentLocation?.locations) {
+      alert(
+        `${recipient.department} の保管ロケーションが未設定です。\n先に部署ロケーションを設定してください。`
+      );
+      setStaffScan("");
       return;
     }
 
-    if (!value) return;
-
-    const location = locations.find((l) => l.barcode_value === value);
-
-    if (!location) {
-      alert("ロケーションQRが見つかりません：" + value);
-      setLocationScan("");
-      return;
-    }
+    const location = departmentLocation.locations;
 
     setItems((prev) => {
       const existingIndex = prev.findIndex(
         (item) =>
-          item.recipient.id === selectedRecipient.id &&
+          item.recipient.id === recipient.id &&
           item.location.id === location.id
       );
 
@@ -180,26 +168,45 @@ export default function RegisterPackagePage() {
       return [
         ...prev,
         {
-          recipient: selectedRecipient,
+          recipient,
           location,
           quantity: 1,
         },
       ];
     });
 
-    setLocationScan("");
-    setSelectedRecipient(null);
-    setTimeout(() => recipientInputRef.current?.focus(), 100);
+    setStaffScan("");
+    setTimeout(() => staffInputRef.current?.focus(), 100);
+  };
+
+  const resetCarrier = () => {
+    if (items.length > 0) {
+      const ok = confirm(
+        "配送会社を変更すると、現在の読み取りリストがリセットされます。よろしいですか？"
+      );
+
+      if (!ok) return;
+    }
+
+    setSelectedCarrier(null);
+    setCarrierScan("");
+    setStaffScan("");
+    setItems([]);
+    setTimeout(() => carrierInputRef.current?.focus(), 100);
+  };
+
+  const removeItem = (index: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleComplete = async () => {
     if (!selectedCarrier) {
-      alert("配送会社が未選択です");
+      alert("配送会社が未選択です。");
       return;
     }
 
     if (items.length === 0) {
-      alert("登録する荷物がありません");
+      alert("登録する荷物がありません。");
       return;
     }
 
@@ -207,7 +214,7 @@ export default function RegisterPackagePage() {
     const user = userData.user;
 
     if (!user) {
-      alert("ログインしてください");
+      alert("ログインしてください。");
       return;
     }
 
@@ -232,16 +239,11 @@ export default function RegisterPackagePage() {
 
     setItems([]);
     setSelectedCarrier(null);
-    setSelectedRecipient(null);
     setCarrierScan("");
-    setRecipientScan("");
-    setLocationScan("");
+    setStaffScan("");
+    await fetchMasters();
 
     setTimeout(() => carrierInputRef.current?.focus(), 100);
-  };
-
-  const removeItem = (index: number) => {
-    setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -250,7 +252,7 @@ export default function RegisterPackagePage() {
         <div className="rounded-2xl bg-white p-6 shadow">
           <h1 className="text-2xl font-bold">荷捌き場 荷物登録</h1>
           <p className="mt-1 text-sm text-gray-500">
-            配送会社QRを最初に1回読み取り、作業完了まで同じ配送会社として登録します。
+            配送会社QRを最初に1回読み取り、その後はスタッフQRだけを読み取ります。
           </p>
         </div>
 
@@ -285,45 +287,24 @@ export default function RegisterPackagePage() {
           )}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl bg-white p-5 shadow">
-            <p className="mb-2 text-sm font-bold">② 宛先スタッフQR</p>
-            <input
-              ref={recipientInputRef}
-              value={recipientScan}
-              onChange={(e) => setRecipientScan(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleRecipientScan();
-              }}
-              placeholder="宛先スタッフQRを読み取り"
-              disabled={!selectedCarrier}
-              className="w-full rounded border p-3 disabled:bg-gray-200"
-            />
-            <p className="mt-3 text-sm">
-              現在：{" "}
-              <span className="font-bold">
-                {selectedRecipient?.name ?? "未選択"}
-              </span>
-            </p>
-          </div>
+        <div className="rounded-2xl bg-white p-6 shadow">
+          <p className="mb-2 text-sm font-bold">② スタッフQR</p>
 
-          <div className="rounded-2xl bg-white p-5 shadow">
-            <p className="mb-2 text-sm font-bold">③ ロケーションQR</p>
-            <input
-              ref={locationInputRef}
-              value={locationScan}
-              onChange={(e) => setLocationScan(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleLocationScan();
-              }}
-              placeholder="ロケーションQRを読み取り"
-              disabled={!selectedCarrier}
-              className="w-full rounded border p-3 disabled:bg-gray-200"
-            />
-            <p className="mt-3 text-sm text-gray-500">
-              宛先QR → ロケーションQR の順で読み取ると、個数が自動カウントされます。
-            </p>
-          </div>
+          <input
+            ref={staffInputRef}
+            value={staffScan}
+            onChange={(e) => setStaffScan(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleStaffScan();
+            }}
+            placeholder="スタッフQRを読み取り"
+            disabled={!selectedCarrier}
+            className="w-full rounded border p-3 disabled:bg-gray-200"
+          />
+
+          <p className="mt-3 text-sm text-gray-500">
+            スタッフの部署に設定された保管ロケーションへ自動登録されます。
+          </p>
         </div>
 
         <div className="rounded-2xl bg-white p-6 shadow">
@@ -345,14 +326,14 @@ export default function RegisterPackagePage() {
           </div>
 
           {items.length === 0 ? (
-            <p className="text-gray-500">まだ荷物が読み取られていません。</p>
+            <p className="text-gray-500">まだスタッフQRが読み取られていません。</p>
           ) : (
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-left">
                   <th className="p-3">宛先スタッフ</th>
                   <th className="p-3">部署</th>
-                  <th className="p-3">ロケーション</th>
+                  <th className="p-3">自動ロケーション</th>
                   <th className="p-3">個数</th>
                   <th className="p-3">操作</th>
                 </tr>
@@ -364,7 +345,7 @@ export default function RegisterPackagePage() {
                     key={`${item.recipient.id}-${item.location.id}`}
                     className="border-b"
                   >
-                    <td className="p-3">{item.recipient.name}</td>
+                    <td className="p-3 font-bold">{item.recipient.name}</td>
                     <td className="p-3">{item.recipient.department ?? "-"}</td>
                     <td className="p-3">
                       {item.location.code}
@@ -396,10 +377,7 @@ export default function RegisterPackagePage() {
             配送会社：CARRIER_YAMATO / CARRIER_SAGAWA / CARRIER_JAPANPOST
           </p>
           <p className="text-sm text-gray-600">
-            宛先スタッフ：TENANT_KUDO_ADMIN
-          </p>
-          <p className="text-sm text-gray-600">
-            ロケーション：LOCATION_A_01 / LOCATION_A_02 / LOCATION_B_01
+            スタッフ例：TENANT_KUDO_ADMIN / STAFF_CHIKAMI など
           </p>
         </div>
       </div>
