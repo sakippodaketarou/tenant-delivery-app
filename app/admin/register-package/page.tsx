@@ -241,6 +241,7 @@ export default function RegisterPackagePage() {
     setSelectedCarrier(null);
     setCarrierScan("");
     setStaffScan("");
+
     await fetchMasters();
 
     setTimeout(() => carrierInputRef.current?.focus(), 100);
@@ -326,7 +327,9 @@ export default function RegisterPackagePage() {
           </div>
 
           {items.length === 0 ? (
-            <p className="text-gray-500">まだスタッフQRが読み取られていません。</p>
+            <p className="text-gray-500">
+              まだスタッフQRが読み取られていません。
+            </p>
           ) : (
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -377,7 +380,7 @@ export default function RegisterPackagePage() {
             配送会社：CARRIER_YAMATO / CARRIER_SAGAWA / CARRIER_JAPANPOST
           </p>
           <p className="text-sm text-gray-600">
-            スタッフ例：TENANT_KUDO_ADMIN / STAFF_CHIKAMI など
+            スタッフ例：TENANT_KUDO_ADMIN / STAFF_CHIKAMI
           </p>
         </div>
       </div>
