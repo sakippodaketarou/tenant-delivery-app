@@ -302,27 +302,42 @@ export default function HomePage() {
     : [];
 
   const menuItems = [
-    {
-      title: "荷物スキャン登録",
-      description: "配送会社QRとスタッフQRを読み取ります",
-      href: "/admin/register-package",
-    },
-    {
-      title: "テナント / スタッフQR一覧",
-      description: "会社QR・スタッフQRを表示、印刷します",
-      href: "/admin/qr-list",
-    },
-    {
-      title: "全社到着状況一覧",
-      description: "全テナントの到着荷物を確認します",
-      href: "/admin/packages",
-    },
-    {
-      title: "スタッフ管理",
-      description: "テナントスタッフを確認・追加します",
-      href: "/staff",
-    },
-  ];
+  {
+    title: "荷物スキャン登録",
+    description: "配送会社QRとスタッフQRを読み取ります",
+    href: "/admin/register-package",
+  },
+
+  {
+    title: "テナント / スタッフQR一覧",
+    description: "QRコードを一覧で確認できます",
+    href: "/admin/qr",
+  },
+
+  {
+    title: "ロケーション設定",
+    description: "部署ごとの保管場所を設定します",
+    href: "/admin/location-map",
+  },
+
+  {
+    title: "スタッフ管理",
+    description: "スタッフ追加・編集・削除を行います",
+    href: "/staff",
+  },
+
+  {
+    title: "管理者チャット",
+    description: "テナントからの問い合わせを確認します",
+    href: "/admin/chat",
+  },
+
+  {
+    title: "到着状況一覧",
+    description: "登録済み荷物一覧を確認します",
+    href: "/admin/packages",
+  },
+];
 
   const getDisplayLocation = (item: PackageRow) => {
     const department = item.profiles?.department;
