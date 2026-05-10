@@ -2,9 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request,
-  });
+  let response = NextResponse.next({ request });
 
   const pathname = request.nextUrl.pathname;
 
@@ -37,9 +35,7 @@ export async function middleware(request: NextRequest) {
             request.cookies.set(name, value)
           );
 
-          response = NextResponse.next({
-            request,
-          });
+          response = NextResponse.next({ request });
 
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
@@ -59,9 +55,47 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && (pathname === "/login" || pathname === "/register")) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const role = profile?.role;
+
+  const isTenant =
+    role === "tenant_company" || role === "tenant_staff";
+
+  const isAdmin =
+    role === "admin" || role === "tenant_admin";
+
+  if (isTenant && pathname.startsWith("/home")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/tenant/home";
+    return NextResponse.redirect(url);
+  }
+
+  if (isTenant && pathname.startsWith("/admin")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/tenant/home";
+    return NextResponse.redirect(url);
+  }
+
+  if (isTenant && pathname === "/staff") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/tenant/staff";
+    return NextResponse.redirect(url);
+  }
+
+  if (isAdmin && pathname.startsWith("/tenant/home")) {
     const url = request.nextUrl.clone();
     url.pathname = "/home";
+    return NextResponse.redirect(url);
+  }
+
+  if (pathname === "/login" || pathname === "/register") {
+    const url = request.nextUrl.clone();
+    url.pathname = isTenant ? "/tenant/home" : "/home";
     return NextResponse.redirect(url);
   }
 
