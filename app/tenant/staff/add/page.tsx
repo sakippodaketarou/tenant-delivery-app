@@ -8,13 +8,10 @@ type MyProfile = {
   id: string;
   company_id: string;
   name: string;
-  department: string | null;
-  role: string | null;
 };
 
 type StaffRow = {
   id: string;
-  company_id: string;
   department: string | null;
 };
 
@@ -24,13 +21,11 @@ export default function TenantStaffAddPage() {
   const [myProfile, setMyProfile] = useState<MyProfile | null>(null);
   const [staffList, setStaffList] = useState<StaffRow[]>([]);
 
-  const [name, setName] = useState("");
+  const [staffName, setStaffName] = useState("");
   const [signature, setSignature] = useState("");
   const [department, setDepartment] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("tenant_staff");
+  const [groupEmail, setGroupEmail] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -49,12 +44,12 @@ export default function TenantStaffAddPage() {
 
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")
-      .select("id, company_id, name, department, role")
+      .select("id, company_id, name")
       .eq("id", user.id)
       .single();
 
     if (profileError || !profileData) {
-      alert("ログインユーザー情報の取得に失敗しました。");
+      alert("ログイン情報の取得に失敗しました。");
       setInitialLoading(false);
       return;
     }
@@ -62,8 +57,8 @@ export default function TenantStaffAddPage() {
     setMyProfile(profileData as MyProfile);
 
     const { data: staffData } = await supabase
-      .from("profiles")
-      .select("id, company_id, department")
+      .from("staffs")
+      .select("id, department")
       .eq("company_id", profileData.company_id)
       .order("department");
 
@@ -83,14 +78,25 @@ export default function TenantStaffAddPage() {
     return Array.from(new Set(values));
   }, [staffList]);
 
+  const createQrValue = () => {
+    const safeSignature = signature
+      .replace(/\s/g, "")
+      .replace(/[^\w\u3040-\u30ff\u3400-\u9fff]/g, "")
+      .toUpperCase();
+
+    const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+    return `STAFF_${safeSignature}_${random}`;
+  };
+
   const handleSubmit = async () => {
     if (!myProfile) {
       alert("ログイン情報が取得できていません。");
       return;
     }
 
-    if (!name.trim()) {
-      alert("名前を入力してください。");
+    if (!staffName.trim()) {
+      alert("スタッフ名を入力してください。");
       return;
     }
 
@@ -104,45 +110,29 @@ export default function TenantStaffAddPage() {
       return;
     }
 
-    if (!email.trim()) {
-      alert("メールアドレスを入力してください。");
-      return;
-    }
-
-    if (!password || password.length < 6) {
-      alert("パスワードは6文字以上で入力してください。");
-      return;
-    }
-
     setLoading(true);
 
-    const res = await fetch("/api/staff/create", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        company_id: myProfile.company_id,
-        name: name.trim(),
-        signature: signature.trim(),
-        department: department.trim(),
-        email: email.trim(),
-        phone: phone.trim() || null,
-        password,
-        role,
-      }),
-    });
+    const qrValue = createQrValue();
 
-    const result = await res.json();
+    const { error } = await supabase.from("staffs").insert({
+      company_id: myProfile.company_id,
+      staff_name: staffName.trim(),
+      signature: signature.trim(),
+      department: department.trim(),
+      email: email.trim() || null,
+      group_email: groupEmail.trim() || null,
+      qr_value: qrValue,
+      is_active: true,
+    });
 
     setLoading(false);
 
-    if (!res.ok) {
-      alert("スタッフ作成エラー：" + (result.error ?? "不明なエラー"));
+    if (error) {
+      alert("スタッフ登録エラー：" + error.message);
       return;
     }
 
-    alert(`スタッフを追加しました。\nQR値：${result.qr_value ?? "作成済み"}`);
+    alert(`スタッフを追加しました。\nQR値：${qrValue}`);
     router.push("/tenant/staff");
   };
 
@@ -151,9 +141,9 @@ export default function TenantStaffAddPage() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center justify-between rounded-2xl bg-white p-6 shadow">
           <div>
-            <h1 className="text-2xl font-bold">テナントスタッフ追加</h1>
+            <h1 className="text-2xl font-bold">スタッフ追加</h1>
             <p className="text-sm text-gray-500">
-              自社スタッフのログインアカウントとQRコードを作成します。
+              スタッフはログイン不要です。荷物の宛先・通知先として登録します。
             </p>
           </div>
 
@@ -171,10 +161,12 @@ export default function TenantStaffAddPage() {
           ) : (
             <div className="space-y-5">
               <div>
-                <label className="mb-1 block text-sm font-bold">名前</label>
+                <label className="mb-1 block text-sm font-bold">
+                  スタッフ名
+                </label>
                 <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={staffName}
+                  onChange={(e) => setStaffName(e.target.value)}
                   placeholder="例：山田 太郎"
                   className="w-full rounded-lg border p-3"
                 />
@@ -185,12 +177,9 @@ export default function TenantStaffAddPage() {
                 <input
                   value={signature}
                   onChange={(e) => setSignature(e.target.value)}
-                  placeholder="例：山田"
+                  placeholder="例：YAMADA"
                   className="w-full rounded-lg border p-3"
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  QR値生成にも使います。短い名前や識別名がおすすめです。
-                </p>
               </div>
 
               <div>
@@ -199,67 +188,41 @@ export default function TenantStaffAddPage() {
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
                   placeholder="例：管理部"
-                  list="tenant-department-options"
+                  list="department-options"
                   className="w-full rounded-lg border p-3"
                 />
 
-                <datalist id="tenant-department-options">
-                  {departmentOptions.map((department) => (
-                    <option key={department} value={department} />
+                <datalist id="department-options">
+                  {departmentOptions.map((item) => (
+                    <option key={item} value={item} />
                   ))}
                 </datalist>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  既存部署は候補に表示されます。新しい部署名も入力できます。
-                </p>
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-bold">
-                  メールアドレス
+                  本人メールアドレス
                 </label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="example@example.com"
-                  className="w-full rounded-lg border p-3"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-bold">電話番号</label>
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="090-0000-0000"
+                  placeholder="yamada@example.com"
                   className="w-full rounded-lg border p-3"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-bold">
-                  初期パスワード
+                  部署共有メールアドレス
                 </label>
                 <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="6文字以上"
+                  type="email"
+                  value={groupEmail}
+                  onChange={(e) => setGroupEmail(e.target.value)}
+                  placeholder="kanri@example.com"
                   className="w-full rounded-lg border p-3"
                 />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-bold">権限</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full rounded-lg border p-3"
-                >
-                  <option value="tenant_staff">一般スタッフ</option>
-                  <option value="tenant_admin">テナント管理者</option>
-                </select>
               </div>
 
               <button
@@ -267,7 +230,7 @@ export default function TenantStaffAddPage() {
                 disabled={loading}
                 className="w-full rounded-lg bg-blue-600 py-3 font-bold text-white disabled:bg-gray-400"
               >
-                {loading ? "作成中..." : "スタッフを追加する"}
+                {loading ? "登録中..." : "スタッフを追加する"}
               </button>
             </div>
           )}
