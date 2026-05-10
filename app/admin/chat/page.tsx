@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
@@ -16,6 +16,7 @@ type ChatRoom = {
   company_id: string;
   title: string | null;
   created_at: string;
+  unread_count?: number;
   companies: {
     name: string;
   } | null;
@@ -28,6 +29,9 @@ type ChatMessage = {
   sender_user_id: string;
   sender_role: string | null;
   message: string;
+  attachment_url: string | null;
+  attachment_name: string | null;
+  is_read: boolean;
   created_at: string;
   profiles?: {
     name: string;
@@ -43,6 +47,8 @@ export default function AdminChatPage() {
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
@@ -82,7 +88,7 @@ export default function AdminChatPage() {
   const fetchRooms = async () => {
     setLoadingRooms(true);
 
-    const { data, error } = await supabase
+    const { data: roomData, error: roomError } = await supabase
       .from("chat_rooms")
       .select(`
         id,
@@ -95,14 +101,56 @@ export default function AdminChatPage() {
       `)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      alert("チャットルーム取得エラー：" + error.message);
+    if (roomError) {
+      alert("チャットルーム取得エラー：" + roomError.message);
       setLoadingRooms(false);
       return;
     }
 
-    setRooms((data ?? []) as unknown as ChatRoom[]);
+    const roomList = (roomData ?? []) as unknown as ChatRoom[];
+
+    const roomIds = roomList.map((room) => room.id);
+
+    let unreadMap = new Map<string, number>();
+
+    if (roomIds.length > 0) {
+      const { data: unreadData } = await supabase
+        .from("chat_messages")
+        .select("id, room_id")
+        .in("room_id", roomIds)
+        .eq("is_read", false)
+        .neq("sender_role", "admin");
+
+      unreadMap = (unreadData ?? []).reduce((map, item: any) => {
+        const current = map.get(item.room_id) ?? 0;
+        map.set(item.room_id, current + 1);
+        return map;
+      }, new Map<string, number>());
+    }
+
+    const roomsWithUnread = roomList.map((room) => ({
+      ...room,
+      unread_count: unreadMap.get(room.id) ?? 0,
+    }));
+
+    setRooms(roomsWithUnread);
+
+    if (!selectedRoom && roomsWithUnread.length > 0) {
+      setSelectedRoom(roomsWithUnread[0]);
+      await fetchMessages(roomsWithUnread[0].id);
+    }
+
     setLoadingRooms(false);
+  };
+
+  const markRoomAsRead = async (roomId: string) => {
+    await supabase
+      .from("chat_messages")
+      .update({
+        is_read: true,
+      })
+      .eq("room_id", roomId)
+      .neq("sender_role", "admin");
   };
 
   const fetchMessages = async (roomId: string) => {
@@ -117,6 +165,9 @@ export default function AdminChatPage() {
         sender_user_id,
         sender_role,
         message,
+        attachment_url,
+        attachment_name,
+        is_read,
         created_at,
         profiles:sender_user_id (
           name
@@ -132,13 +183,93 @@ export default function AdminChatPage() {
     }
 
     setMessages((data ?? []) as unknown as ChatMessage[]);
+
+    await markRoomAsRead(roomId);
+    await fetchRoomsWithoutAutoSelect();
+
     setLoadingMessages(false);
     scrollToBottom();
+  };
+
+  const fetchRoomsWithoutAutoSelect = async () => {
+    const { data: roomData } = await supabase
+      .from("chat_rooms")
+      .select(`
+        id,
+        company_id,
+        title,
+        created_at,
+        companies (
+          name
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    const roomList = (roomData ?? []) as unknown as ChatRoom[];
+    const roomIds = roomList.map((room) => room.id);
+
+    let unreadMap = new Map<string, number>();
+
+    if (roomIds.length > 0) {
+      const { data: unreadData } = await supabase
+        .from("chat_messages")
+        .select("id, room_id")
+        .in("room_id", roomIds)
+        .eq("is_read", false)
+        .neq("sender_role", "admin");
+
+      unreadMap = (unreadData ?? []).reduce((map, item: any) => {
+        const current = map.get(item.room_id) ?? 0;
+        map.set(item.room_id, current + 1);
+        return map;
+      }, new Map<string, number>());
+    }
+
+    setRooms(
+      roomList.map((room) => ({
+        ...room,
+        unread_count: unreadMap.get(room.id) ?? 0,
+      }))
+    );
   };
 
   const selectRoom = async (room: ChatRoom) => {
     setSelectedRoom(room);
     await fetchMessages(room.id);
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0] ?? null;
+    setFile(selectedFile);
+  };
+
+  const uploadFile = async () => {
+    if (!file || !selectedRoom || !profile) {
+      return {
+        attachmentUrl: null,
+        attachmentName: null,
+      };
+    }
+
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${selectedRoom.company_id}/${selectedRoom.id}/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.${fileExt}`;
+
+    const { error } = await supabase.storage
+      .from("chat-files")
+      .upload(fileName, file);
+
+    if (error) {
+      throw new Error("ファイルアップロードエラー：" + error.message);
+    }
+
+    const { data } = supabase.storage.from("chat-files").getPublicUrl(fileName);
+
+    return {
+      attachmentUrl: data.publicUrl,
+      attachmentName: file.name,
+    };
   };
 
   const sendMessage = async () => {
@@ -147,29 +278,38 @@ export default function AdminChatPage() {
       return;
     }
 
-    if (!message.trim()) {
-      return;
-    }
+    if (!message.trim() && !file) return;
+
+    const sendText = message.trim();
 
     setSending(true);
 
-    const { error } = await supabase.from("chat_messages").insert({
-      room_id: selectedRoom.id,
-      company_id: selectedRoom.company_id,
-      sender_user_id: profile.id,
-      sender_role: profile.role ?? "admin",
-      message: message.trim(),
-    });
+    try {
+      const { attachmentUrl, attachmentName } = await uploadFile();
 
-    setSending(false);
+      const { error } = await supabase.from("chat_messages").insert({
+        room_id: selectedRoom.id,
+        company_id: selectedRoom.company_id,
+        sender_user_id: profile.id,
+        sender_role: profile.role ?? "admin",
+        message: sendText || "添付ファイルを送信しました。",
+        attachment_url: attachmentUrl,
+        attachment_name: attachmentName,
+        is_read: false,
+      });
 
-    if (error) {
-      alert("メッセージ送信エラー：" + error.message);
-      return;
+      if (error) {
+        throw new Error("メッセージ送信エラー：" + error.message);
+      }
+
+      setMessage("");
+      setFile(null);
+      await fetchMessages(selectedRoom.id);
+    } catch (error: any) {
+      alert(error.message ?? "送信エラー");
     }
 
-    setMessage("");
-    await fetchMessages(selectedRoom.id);
+    setSending(false);
   };
 
   useEffect(() => {
@@ -182,10 +322,10 @@ export default function AdminChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedRoom) return;
+    if (!selectedRoom?.id) return;
 
     const channel = supabase
-      .channel(`admin-chat-${selectedRoom.id}`)
+      .channel(`admin-chat-room-${selectedRoom.id}`)
       .on(
         "postgres_changes",
         {
@@ -204,6 +344,42 @@ export default function AdminChatPage() {
       supabase.removeChannel(channel);
     };
   }, [selectedRoom?.id]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-chat-rooms-list")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_rooms",
+        },
+        async () => {
+          await fetchRooms();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+        },
+        async () => {
+          await fetchRoomsWithoutAutoSelect();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages.length]);
 
   return (
     <main className="min-h-screen bg-gray-100 p-6">
@@ -224,9 +400,18 @@ export default function AdminChatPage() {
           </button>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
           <div className="rounded-2xl bg-white p-5 shadow">
-            <h2 className="mb-4 text-xl font-bold">チャット一覧</h2>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">チャット一覧</h2>
+
+              <button
+                onClick={fetchRooms}
+                className="rounded-lg border px-3 py-1 text-sm"
+              >
+                更新
+              </button>
+            </div>
 
             {loadingRooms ? (
               <p className="text-gray-500">読み込み中...</p>
@@ -240,12 +425,18 @@ export default function AdminChatPage() {
                   <button
                     key={room.id}
                     onClick={() => selectRoom(room)}
-                    className={`w-full rounded-xl border p-4 text-left transition hover:bg-gray-50 ${
+                    className={`relative w-full rounded-xl border p-4 text-left transition hover:bg-gray-50 ${
                       selectedRoom?.id === room.id
                         ? "border-blue-600 bg-blue-50"
                         : "bg-white"
                     }`}
                   >
+                    {room.unread_count && room.unread_count > 0 ? (
+                      <span className="absolute right-3 top-3 rounded-full bg-red-600 px-2 py-1 text-xs font-bold text-white">
+                        {room.unread_count}
+                      </span>
+                    ) : null}
+
                     <p className="font-bold">
                       {room.companies?.name ?? "会社名未設定"}
                     </p>
@@ -318,35 +509,72 @@ export default function AdminChatPage() {
                           <p className="whitespace-pre-wrap text-sm">
                             {item.message}
                           </p>
+
+                          {item.attachment_url && (
+                            <a
+                              href={item.attachment_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`mt-3 block rounded-lg px-3 py-2 text-sm font-bold ${
+                                isMine
+                                  ? "bg-white text-blue-600"
+                                  : "bg-blue-50 text-blue-600"
+                              }`}
+                            >
+                              添付：
+                              {item.attachment_name ?? "ファイルを開く"}
+                            </a>
+                          )}
                         </div>
                       </div>
                     );
                   })}
+
                   <div ref={bottomRef} />
                 </div>
               )}
             </div>
 
-            <div className="flex gap-3 border-t p-5">
+            <div className="space-y-3 border-t p-5">
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    sendMessage();
+                  }
+                }}
                 placeholder={
                   selectedRoom
-                    ? "返信メッセージを入力してください"
+                    ? "返信メッセージを入力してください（Ctrl + Enterで送信）"
                     : "左の一覧からチャットを選択してください"
                 }
                 disabled={!selectedRoom}
-                className="min-h-24 flex-1 rounded-xl border p-3 disabled:bg-gray-100"
+                className="min-h-24 w-full rounded-xl border p-3 disabled:bg-gray-100"
               />
 
-              <button
-                onClick={sendMessage}
-                disabled={sending || !selectedRoom}
-                className="w-32 rounded-xl bg-blue-600 font-bold text-white disabled:bg-gray-400"
-              >
-                {sending ? "送信中" : "送信"}
-              </button>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <input
+                    type="file"
+                    onChange={handleFileChange}
+                    disabled={!selectedRoom}
+                  />
+                  {file && (
+                    <p className="mt-1 text-sm text-gray-500">
+                      選択中：{file.name}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  onClick={sendMessage}
+                  disabled={sending || !selectedRoom || (!message.trim() && !file)}
+                  className="w-full rounded-xl bg-blue-600 px-5 py-3 font-bold text-white disabled:bg-gray-400 md:w-32"
+                >
+                  {sending ? "送信中" : "送信"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
