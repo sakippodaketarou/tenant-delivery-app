@@ -118,25 +118,8 @@ export default function TenantRegisterPage() {
 
           <p className="mt-6 max-w-xl text-slate-300">
             会社単位の共通ログインアカウントを作成します。
-            スタッフ個別のログイン作成は不要で、登録後にスタッフCSV取込・QR運用ができます。
           </p>
 
-          <div className="mt-8 grid max-w-xl gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-              <p className="text-lg font-bold">01</p>
-              <p className="mt-2 text-sm text-slate-300">会社情報登録</p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-              <p className="text-lg font-bold">02</p>
-              <p className="mt-2 text-sm text-slate-300">ログインURL送信</p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-              <p className="text-lg font-bold">03</p>
-              <p className="mt-2 text-sm text-slate-300">スタッフCSV取込</p>
-            </div>
-          </div>
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-white/10 p-6 shadow-2xl backdrop-blur">

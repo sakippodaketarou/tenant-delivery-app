@@ -88,25 +88,8 @@ export default function LoginPage() {
 
           <p className="mt-6 max-w-xl text-slate-300">
             荷捌き場で登録された荷物を、会社単位で確認・通知・受取管理できます。
-            管理者は全社横断、テナントは自社分のみ確認できます。
           </p>
-
-          <div className="mt-8 grid max-w-xl gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-              <p className="text-lg font-bold">QR</p>
-              <p className="mt-2 text-sm text-slate-300">荷物登録</p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-              <p className="text-lg font-bold">MAIL</p>
-              <p className="mt-2 text-sm text-slate-300">到着通知</p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-              <p className="text-lg font-bold">ALERT</p>
-              <p className="mt-2 text-sm text-slate-300">未受取管理</p>
-            </div>
-          </div>
+          
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-white/10 p-6 shadow-2xl backdrop-blur">
