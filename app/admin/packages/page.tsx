@@ -11,8 +11,11 @@ type PackageRow = {
   recipient_staff_id: string | null;
   quantity: number;
   status: string;
+  shipper_name: string | null;
   arrived_at: string;
   received_at: string | null;
+  received_by: string | null;
+  received_proof_at: string | null;
   companies: {
     name: string;
   } | null;
@@ -47,8 +50,10 @@ export default function AdminPackagesPage() {
   >([]);
 
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("unreceived");
   const [companyFilter, setCompanyFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
+  const [keyword, setKeyword] = useState("");
   const [alertOnly, setAlertOnly] = useState(false);
   const [sendingReminder, setSendingReminder] = useState(false);
 
@@ -64,8 +69,11 @@ export default function AdminPackagesPage() {
         recipient_staff_id,
         quantity,
         status,
+        shipper_name,
         arrived_at,
         received_at,
+        received_by,
+        received_proof_at,
         companies (
           name
         ),
@@ -118,6 +126,38 @@ export default function AdminPackagesPage() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+  const channel = supabase
+    .channel("admin-packages-realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "packages",
+      },
+      async () => {
+        await fetchData();
+      }
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "department_locations",
+      },
+      async () => {
+        await fetchData();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+
   const getElapsedDays = (arrivedAt: string) => {
     const now = new Date().getTime();
     const arrived = new Date(arrivedAt).getTime();
@@ -159,6 +199,8 @@ export default function AdminPackagesPage() {
   }, [packages]);
 
   const filteredPackages = useMemo(() => {
+    const lowerKeyword = keyword.trim().toLowerCase();
+
     return packages.filter((item) => {
       if (statusFilter !== "all" && item.status !== statusFilter) {
         return false;
@@ -166,6 +208,16 @@ export default function AdminPackagesPage() {
 
       if (companyFilter !== "all" && item.company_id !== companyFilter) {
         return false;
+      }
+
+      if (dateFilter) {
+        const arrivedDate = new Date(item.arrived_at)
+          .toISOString()
+          .slice(0, 10);
+
+        if (arrivedDate !== dateFilter) {
+          return false;
+        }
       }
 
       if (alertOnly) {
@@ -176,9 +228,37 @@ export default function AdminPackagesPage() {
         }
       }
 
+      if (lowerKeyword) {
+        const targetText = [
+          item.companies?.name,
+          item.staffs?.staff_name,
+          item.staffs?.department,
+          item.carriers?.name,
+          item.shipper_name,
+          item.status,
+          item.received_by,
+          getLocationText(item),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        if (!targetText.includes(lowerKeyword)) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [packages, statusFilter, companyFilter, alertOnly]);
+  }, [
+    packages,
+    statusFilter,
+    companyFilter,
+    dateFilter,
+    alertOnly,
+    keyword,
+    departmentLocations,
+  ]);
 
   const unreceivedPackages = packages.filter(
     (item) => item.status === "unreceived"
@@ -205,7 +285,14 @@ export default function AdminPackagesPage() {
   );
 
   const handleReceive = async (packageId: string) => {
-    const ok = confirm("この荷物を受取済みにしますか？");
+    const receivedBy = prompt("受取者名を入力してください。");
+
+    if (!receivedBy || !receivedBy.trim()) {
+      alert("受取者名は必須です。");
+      return;
+    }
+
+    const ok = confirm(`${receivedBy} さんで受取済みにしますか？`);
 
     if (!ok) return;
 
@@ -213,7 +300,9 @@ export default function AdminPackagesPage() {
       .from("packages")
       .update({
         status: "received",
+        received_by: receivedBy.trim(),
         received_at: new Date().toISOString(),
+        received_proof_at: new Date().toISOString(),
       })
       .eq("id", packageId);
 
@@ -234,7 +323,9 @@ export default function AdminPackagesPage() {
       .from("packages")
       .update({
         status: "unreceived",
+        received_by: null,
         received_at: null,
+        received_proof_at: null,
       })
       .eq("id", packageId);
 
@@ -267,13 +358,79 @@ export default function AdminPackagesPage() {
       }
 
       alert(`催促メール送信完了\n送信件数：${result.sentCount ?? 0}件`);
-
       await fetchData();
     } catch (error: any) {
       alert(error.message ?? "催促メール送信エラー");
     }
 
     setSendingReminder(false);
+  };
+
+  const escapeCsv = (value: string | number | null | undefined) => {
+    const text = String(value ?? "");
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+
+  const exportCsv = () => {
+    if (filteredPackages.length === 0) {
+      alert("出力対象がありません。");
+      return;
+    }
+
+    const headers = [
+      "会社",
+      "状態",
+      "宛先スタッフ",
+      "部署",
+      "荷主",
+      "配送業者",
+      "個数",
+      "保管場所",
+      "到着日時",
+      "経過日数",
+      "受取者",
+      "受取日時",
+      "本人メール",
+      "共有メール",
+    ];
+
+    const rows = filteredPackages.map((item) => [
+      item.companies?.name ?? "",
+      item.status === "received" ? "受取済み" : "未受取",
+      item.staffs?.staff_name ?? "",
+      item.staffs?.department ?? "",
+      item.shipper_name ?? "",
+      item.carriers?.name ?? "",
+      item.quantity,
+      getLocationText(item),
+      new Date(item.arrived_at).toLocaleString("ja-JP"),
+      `${getElapsedDays(item.arrived_at)}日`,
+      item.received_by ?? "",
+      item.received_at
+        ? new Date(item.received_at).toLocaleString("ja-JP")
+        : "",
+      item.staffs?.email ?? "",
+      item.staffs?.group_email ?? "",
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((value) => escapeCsv(value)).join(","))
+      .join("\n");
+
+    const blob = new Blob([`\uFEFF${csv}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = `admin_packages_${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    a.click();
+
+    URL.revokeObjectURL(url);
   };
 
   const groupedByCompany = useMemo(() => {
@@ -311,17 +468,7 @@ export default function AdminPackagesPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-          <div className="rounded-2xl bg-white p-5 shadow">
-            <p className="text-sm text-gray-500">全件数</p>
-            <p className="mt-2 text-3xl font-bold">{packages.length}</p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow">
-            <p className="text-sm text-gray-500">全個数</p>
-            <p className="mt-2 text-3xl font-bold">{totalQuantity}</p>
-          </div>
-
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="rounded-2xl bg-white p-5 shadow">
             <p className="text-sm text-gray-500">未受取件数</p>
             <p className="mt-2 text-3xl font-bold">
@@ -332,6 +479,13 @@ export default function AdminPackagesPage() {
           <div className="rounded-2xl bg-white p-5 shadow">
             <p className="text-sm text-gray-500">未受取個数</p>
             <p className="mt-2 text-3xl font-bold">{unreceivedQuantity}</p>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5 shadow">
+            <p className="text-sm text-gray-500">受取済み件数</p>
+            <p className="mt-2 text-3xl font-bold">
+              {receivedPackages.length}
+            </p>
           </div>
 
           <div className="rounded-2xl bg-white p-5 shadow">
@@ -364,36 +518,6 @@ export default function AdminPackagesPage() {
                   : "5日超過へ催促メール送信"}
               </button>
             </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {alertPackages.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl bg-white p-4 text-sm shadow-sm"
-                >
-                  <p className="font-bold">
-                    {item.companies?.name ?? "会社名未設定"}
-                  </p>
-
-                  <p>
-                    {item.staffs?.department ?? "-"} /{" "}
-                    {item.staffs?.staff_name ?? "宛先未設定"}
-                  </p>
-
-                  <p className="text-red-600">
-                    {getElapsedDays(item.arrived_at)}日経過 / {item.quantity}個
-                  </p>
-
-                  <p className="mt-1 text-xs text-gray-500">
-                    本人：{item.staffs?.email ?? "-"}
-                  </p>
-
-                  <p className="text-xs text-gray-500">
-                    共有：{item.staffs?.group_email ?? "-"}
-                  </p>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
@@ -403,11 +527,11 @@ export default function AdminPackagesPage() {
               <h2 className="text-xl font-bold">絞り込み</h2>
               <p className="text-sm text-gray-500">
                 表示件数：{filteredPackages.length}件 / 表示個数：
-                {filteredQuantity}個
+                {filteredQuantity}個 / 全個数：{totalQuantity}個
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
               <div>
                 <label className="mb-1 block text-sm font-bold">会社</label>
                 <select
@@ -431,10 +555,30 @@ export default function AdminPackagesPage() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                   className="w-full rounded-lg border p-3"
                 >
-                  <option value="all">すべて</option>
                   <option value="unreceived">未受取</option>
                   <option value="received">受取済み</option>
+                  <option value="all">すべて</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-bold">到着日</label>
+                <input
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full rounded-lg border p-3"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-bold">検索</label>
+                <input
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  placeholder="会社・スタッフ・荷主など"
+                  className="w-full rounded-lg border p-3"
+                />
               </div>
 
               <label className="flex items-center gap-2 rounded-lg border p-3">
@@ -448,15 +592,37 @@ export default function AdminPackagesPage() {
             </div>
           </div>
 
-          <button
-            onClick={handleSendReminderMails}
-            disabled={sendingReminder}
-            className="rounded-lg bg-red-600 px-5 py-3 font-bold text-white disabled:bg-gray-400"
-          >
-            {sendingReminder
-              ? "催促メール送信中..."
-              : "5日超過へ催促メール送信"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={exportCsv}
+              className="rounded-lg bg-green-600 px-5 py-3 font-bold text-white"
+            >
+              CSV出力
+            </button>
+
+            <button
+              onClick={() => {
+                setStatusFilter("unreceived");
+                setCompanyFilter("all");
+                setDateFilter("");
+                setKeyword("");
+                setAlertOnly(false);
+              }}
+              className="rounded-lg border px-5 py-3 font-bold"
+            >
+              フィルター解除
+            </button>
+
+            <button
+              onClick={handleSendReminderMails}
+              disabled={sendingReminder}
+              className="rounded-lg bg-red-600 px-5 py-3 font-bold text-white disabled:bg-gray-400"
+            >
+              {sendingReminder
+                ? "催促メール送信中..."
+                : "5日超過へ催促メール送信"}
+            </button>
+          </div>
         </div>
 
         <div className="rounded-2xl bg-white p-6 shadow">
@@ -474,18 +640,13 @@ export default function AdminPackagesPage() {
                   0
                 );
 
-                const companyUnreceived = items.filter(
-                  (item) => item.status === "unreceived"
-                ).length;
-
                 return (
                   <div key={companyName} className="rounded-2xl border p-5">
                     <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <h3 className="text-lg font-bold">{companyName}</h3>
                         <p className="text-sm text-gray-500">
-                          表示件数：{items.length}件 / 未受取：
-                          {companyUnreceived}件
+                          表示件数：{items.length}件
                         </p>
                       </div>
 
@@ -498,15 +659,18 @@ export default function AdminPackagesPage() {
                       <table className="w-full border-collapse text-sm">
                         <thead>
                           <tr className="border-b bg-gray-50 text-left">
+                            <th className="p-3">状態</th>
                             <th className="p-3">宛先スタッフ</th>
                             <th className="p-3">部署</th>
+                            <th className="p-3">荷主</th>
                             <th className="p-3">配送業者</th>
                             <th className="p-3">個数</th>
                             <th className="p-3">保管場所</th>
                             <th className="p-3">到着日時</th>
-                            <th className="p-3">経過日数</th>
+                            <th className="p-3">経過</th>
+                            <th className="p-3">受取者</th>
+                            <th className="p-3">受取日時</th>
                             <th className="p-3">通知先</th>
-                            <th className="p-3">状態</th>
                             <th className="p-3">操作</th>
                           </tr>
                         </thead>
@@ -524,12 +688,22 @@ export default function AdminPackagesPage() {
                                   isAlert ? "bg-red-50" : ""
                                 }`}
                               >
+                                <td className="p-3">
+                                  {item.status === "received"
+                                    ? "受取済み"
+                                    : "未受取"}
+                                </td>
+
                                 <td className="p-3 font-bold">
                                   {item.staffs?.staff_name ?? "未設定"}
                                 </td>
 
                                 <td className="p-3">
                                   {item.staffs?.department ?? "-"}
+                                </td>
+
+                                <td className="p-3">
+                                  {item.shipper_name ?? "-"}
                                 </td>
 
                                 <td className="p-3">
@@ -561,6 +735,18 @@ export default function AdminPackagesPage() {
                                 </td>
 
                                 <td className="p-3">
+                                  {item.received_by ?? "-"}
+                                </td>
+
+                                <td className="p-3">
+                                  {item.received_at
+                                    ? new Date(
+                                        item.received_at
+                                      ).toLocaleString("ja-JP")
+                                    : "-"}
+                                </td>
+
+                                <td className="p-3">
                                   <div className="text-xs text-gray-500">
                                     <p>本人：{item.staffs?.email ?? "-"}</p>
                                     <p>
@@ -568,12 +754,6 @@ export default function AdminPackagesPage() {
                                       {item.staffs?.group_email ?? "-"}
                                     </p>
                                   </div>
-                                </td>
-
-                                <td className="p-3">
-                                  {item.status === "received"
-                                    ? "受取済み"
-                                    : "未受取"}
                                 </td>
 
                                 <td className="p-3">

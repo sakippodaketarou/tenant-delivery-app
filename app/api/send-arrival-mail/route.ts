@@ -24,6 +24,7 @@ export async function POST(req: Request) {
       department,
       carrierName,
       quantity,
+      shipperName,
       location,
     } = body;
 
@@ -41,18 +42,46 @@ export async function POST(req: Request) {
     const html = `
       <div style="font-family:sans-serif; line-height:1.7;">
         <h2>荷物到着通知</h2>
+
         <p>${staffName} 様</p>
+
         <p>荷物が到着しました。</p>
 
         <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;">
-          <tr><td><b>会社</b></td><td>${companyName}</td></tr>
-          <tr><td><b>部署</b></td><td>${department}</td></tr>
-          <tr><td><b>配送会社</b></td><td>${carrierName}</td></tr>
-          <tr><td><b>個数</b></td><td>${quantity}</td></tr>
-          <tr><td><b>保管場所</b></td><td>${location}</td></tr>
+          <tr>
+            <td><b>会社</b></td>
+            <td>${companyName}</td>
+          </tr>
+
+          <tr>
+            <td><b>部署</b></td>
+            <td>${department}</td>
+          </tr>
+
+          <tr>
+            <td><b>荷主</b></td>
+            <td>${shipperName ?? "-"}</td>
+          </tr>
+
+          <tr>
+            <td><b>配送会社</b></td>
+            <td>${carrierName}</td>
+          </tr>
+
+          <tr>
+            <td><b>個数</b></td>
+            <td>${quantity}</td>
+          </tr>
+
+          <tr>
+            <td><b>保管場所</b></td>
+            <td>${location}</td>
+          </tr>
         </table>
 
-        <p style="margin-top:24px;">荷物をご確認ください。</p>
+        <p style="margin-top:24px;">
+          荷物をご確認ください。
+        </p>
       </div>
     `;
 
