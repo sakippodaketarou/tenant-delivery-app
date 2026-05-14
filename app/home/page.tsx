@@ -26,6 +26,25 @@ type PackageRow = {
   } | null;
 };
 
+const locationCodes = [
+  "A1",
+  "A2",
+  "A3",
+  "B1",
+  "B2",
+  "B3",
+  "C1",
+  "C2",
+  "C3",
+  "D1",
+  "D2",
+  "D3",
+  "D4",
+  "E1",
+  "E2",
+  "E3",
+];
+
 export default function HomePage() {
   const router = useRouter();
 
@@ -57,10 +76,7 @@ export default function HomePage() {
       return;
     }
 
-    if (
-      profileData.role !== "admin" &&
-      profileData.role !== "tenant_admin"
-    ) {
+    if (profileData.role !== "admin" && profileData.role !== "tenant_admin") {
       router.push("/tenant/home");
       return;
     }
@@ -153,6 +169,8 @@ export default function HomePage() {
     });
   }, [unreceivedPackages]);
 
+  const recentUnreceived = unreceivedPackages.slice(0, 6);
+
   const menuItems = [
     {
       title: "荷物スキャン登録",
@@ -175,13 +193,16 @@ export default function HomePage() {
       href: "/admin/location-map",
     },
     {
+      title: "スタッフ管理",
+      description: "管理者スタッフを追加・編集",
+      href: "/staff",
+    },
+    {
       title: "管理者チャット",
       description: "テナントからの問い合わせ確認",
       href: "/admin/chat",
     },
   ];
-
-  const recentUnreceived = unreceivedPackages.slice(0, 6);
 
   return (
     <main className="min-h-screen bg-slate-50 p-6">
@@ -245,7 +266,7 @@ export default function HomePage() {
             アクセスメニュー
           </h2>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
             {menuItems.map((item) => (
               <button
                 key={item.title}
@@ -327,6 +348,59 @@ export default function HomePage() {
               </table>
             </div>
           )}
+        </div>
+
+        <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">
+                保管ロケーションマップ
+              </h2>
+
+              <p className="text-sm text-slate-500">
+                ロケーション別の部署・荷物状況を確認できます。
+              </p>
+            </div>
+
+            <button
+              onClick={() => router.push("/admin/location-map")}
+              className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white"
+            >
+              ロケーション管理へ
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
+            {locationCodes.map((location) => (
+              <button
+                key={location}
+                onClick={() => router.push("/admin/location-map")}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <p className="text-xl font-bold text-slate-900">{location}</p>
+
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm font-bold text-blue-700">
+                    詳細確認
+                  </p>
+
+                  <p className="text-xs text-slate-500">
+                    管理画面へ
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">
+            <p className="text-sm font-bold text-slate-700">
+              表示方針
+            </p>
+
+            <p className="mt-1 text-sm text-slate-500">
+              マップ上はシンプルに表示し、詳細な企業別部署カード・荷物数はロケーション設定画面で確認します。
+            </p>
+          </div>
         </div>
 
         {profile && (
