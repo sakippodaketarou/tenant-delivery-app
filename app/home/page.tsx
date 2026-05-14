@@ -26,23 +26,23 @@ type PackageRow = {
   } | null;
 };
 
-const locationCodes = [
-  "A1",
-  "A2",
-  "A3",
-  "B1",
-  "B2",
-  "B3",
-  "C1",
-  "C2",
-  "C3",
-  "D1",
-  "D2",
-  "D3",
-  "D4",
-  "E1",
-  "E2",
-  "E3",
+const layoutLocations = [
+  { code: "A1", x: 20, y: 55 },
+  { code: "A2", x: 35, y: 55 },
+  { code: "A3", x: 50, y: 55 },
+  { code: "B1", x: 20, y: 40 },
+  { code: "B2", x: 35, y: 40 },
+  { code: "B3", x: 50, y: 40 },
+  { code: "C1", x: 20, y: 25 },
+  { code: "C2", x: 35, y: 25 },
+  { code: "C3", x: 50, y: 25 },
+  { code: "D1", x: 20, y: 75 },
+  { code: "D2", x: 35, y: 75 },
+  { code: "D3", x: 50, y: 75 },
+  { code: "D4", x: 65, y: 75 },
+  { code: "E1", x: 80, y: 25 },
+  { code: "E2", x: 80, y: 40 },
+  { code: "E3", x: 80, y: 55 },
 ];
 
 export default function HomePage() {
@@ -171,6 +171,26 @@ export default function HomePage() {
 
   const recentUnreceived = unreceivedPackages.slice(0, 6);
 
+  const locationSummary = useMemo(() => {
+    return layoutLocations.map((location) => {
+      const relatedPackages = unreceivedPackages.filter((item) => {
+        const department = item.staffs?.department ?? "";
+        return department.includes(location.code);
+      });
+
+      const totalQuantity = relatedPackages.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
+
+      return {
+        ...location,
+        relatedPackages,
+        totalQuantity,
+      };
+    });
+  }, [unreceivedPackages]);
+
   const menuItems = [
     {
       title: "荷物スキャン登録",
@@ -190,7 +210,7 @@ export default function HomePage() {
     {
       title: "ロケーション設定",
       description: "登録企業別の部署ロケーションを設定",
-      href: "/admin/location-map",
+      href: "/admin/department-locations",
     },
     {
       title: "スタッフ管理",
@@ -363,43 +383,53 @@ export default function HomePage() {
             </div>
 
             <button
-              onClick={() => router.push("/admin/location-map")}
+              onClick={() => router.push("/admin/department-locations")}
               className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white"
             >
               ロケーション管理へ
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
-            {locationCodes.map((location) => (
-              <button
-                key={location}
-                onClick={() => router.push("/admin/location-map")}
-                className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <p className="text-xl font-bold text-slate-900">{location}</p>
+          <div className="relative h-[650px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+            <div className="absolute left-6 top-6 rounded-xl bg-white px-4 py-2 text-sm font-bold shadow-sm">
+              荷捌き場 / 保管エリア
+            </div>
 
-                <div className="mt-3 space-y-1">
-                  <p className="text-sm font-bold text-blue-700">
-                    詳細確認
-                  </p>
+            <div className="absolute left-[16%] top-[34%] h-[42%] w-[34%] rounded-2xl border-2 border-dashed border-slate-300 bg-white/40" />
+            <div className="absolute left-[48%] top-[72%] h-[16%] w-[34%] rounded-2xl border-2 border-dashed border-slate-300 bg-white/40" />
+            <div className="absolute left-[76%] top-[22%] h-[42%] w-[14%] rounded-2xl border-2 border-dashed border-slate-300 bg-white/40" />
 
-                  <p className="text-xs text-slate-500">
-                    管理画面へ
-                  </p>
-                </div>
-              </button>
-            ))}
-          </div>
+            {locationSummary.map((location) => {
+              const hasPackage = location.totalQuantity > 0;
 
-          <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">
-            <p className="text-sm font-bold text-slate-700">
-              表示方針
-            </p>
+              return (
+                <button
+                  key={location.code}
+                  onClick={() => router.push("/admin/department-locations")}
+                  className={`absolute flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-xl border-2 text-sm font-bold shadow-sm transition hover:scale-105 ${
+                    hasPackage
+                      ? "border-blue-600 bg-blue-500 text-white"
+                      : "border-slate-300 bg-white text-slate-900"
+                  }`}
+                  style={{
+                    left: `${location.x}%`,
+                    top: `${location.y}%`,
+                  }}
+                >
+                  <span>{location.code}</span>
 
-            <p className="mt-1 text-sm text-slate-500">
-              マップ上はシンプルに表示し、詳細な企業別部署カード・荷物数はロケーション設定画面で確認します。
-            </p>
+                  {hasPackage && (
+                    <span className="mt-1 text-[11px]">
+                      {location.totalQuantity}個
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <div className="absolute bottom-6 left-6 rounded-xl bg-white px-4 py-2 text-xs text-slate-500 shadow-sm">
+              ※ 青色：未受取荷物あり
+            </div>
           </div>
         </div>
 
