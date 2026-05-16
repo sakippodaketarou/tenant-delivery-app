@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { DragEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
@@ -62,6 +62,8 @@ export default function AdminDepartmentLocationsPage() {
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedLocationCode, setSelectedLocationCode] = useState("");
+  const [draggingDepartment, setDraggingDepartment] = useState("");
+  const [hoverLocationCode, setHoverLocationCode] = useState("");
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
@@ -193,6 +195,11 @@ export default function AdminDepartmentLocationsPage() {
       return;
     }
 
+    if (!department) {
+      alert("部署を選択してください。");
+      return;
+    }
+
     const location = getLocationByCode(locationCode);
 
     if (!location) {
@@ -204,7 +211,11 @@ export default function AdminDepartmentLocationsPage() {
       `${selectedCompany?.name ?? ""} / ${department} を ${locationCode} に割り当てますか？`
     );
 
-    if (!ok) return;
+    if (!ok) {
+      setDraggingDepartment("");
+      setHoverLocationCode("");
+      return;
+    }
 
     const { error: deleteError } = await supabase
       .from("department_locations")
@@ -231,7 +242,10 @@ export default function AdminDepartmentLocationsPage() {
     }
 
     setSelectedDepartment("");
-    setSelectedLocationCode("");
+    setSelectedLocationCode(locationCode);
+    setDraggingDepartment("");
+    setHoverLocationCode("");
+
     await fetchData();
   };
 
@@ -254,6 +268,68 @@ export default function AdminDepartmentLocationsPage() {
     await fetchData();
   };
 
+  const handleDepartmentDragStart = (
+    event: DragEvent<HTMLDivElement>,
+    department: string
+  ) => {
+    setDraggingDepartment(department);
+    setSelectedDepartment(department);
+
+    event.dataTransfer.clearData();
+    event.dataTransfer.setData("text/plain", department);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDepartmentDragEnd = () => {
+    setDraggingDepartment("");
+    setHoverLocationCode("");
+  };
+
+  const handleLocationDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    locationCode: string
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    event.dataTransfer.dropEffect = "move";
+    setHoverLocationCode(locationCode);
+  };
+
+  const handleLocationDrop = async (
+    event: DragEvent<HTMLDivElement>,
+    locationCode: string
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const droppedDepartment =
+      event.dataTransfer.getData("text/plain") ||
+      draggingDepartment ||
+      selectedDepartment;
+
+    setHoverLocationCode("");
+
+    if (!droppedDepartment) {
+      alert("部署チップをドラッグしてください。");
+      return;
+    }
+
+    await assignDepartmentToLocation(droppedDepartment, locationCode);
+  };
+
+  const handleLocationClick = async (locationCode: string) => {
+    setSelectedLocationCode(locationCode);
+
+    if (selectedDepartment) {
+      await assignDepartmentToLocation(selectedDepartment, locationCode);
+    }
+  };
+
+  const selectedLocationDepartments = selectedLocationCode
+    ? getAssignedDepartmentsByLocation(selectedLocationCode)
+    : [];
+
   return (
     <main className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -263,7 +339,7 @@ export default function AdminDepartmentLocationsPage() {
               ロケーション設定
             </h1>
             <p className="text-sm text-slate-500">
-              会社を選択し、部署ごとの保管ロケーションを設定します。
+              会社を選択し、部署チップをロケーションへドラッグ＆ドロップして保管場所を設定します。
             </p>
           </div>
 
@@ -286,6 +362,8 @@ export default function AdminDepartmentLocationsPage() {
               setSelectedCompanyId(e.target.value);
               setSelectedDepartment("");
               setSelectedLocationCode("");
+              setDraggingDepartment("");
+              setHoverLocationCode("");
             }}
             className="w-full rounded-xl border border-slate-200 p-3"
           >
@@ -297,88 +375,100 @@ export default function AdminDepartmentLocationsPage() {
           </select>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-          <div className="rounded-2xl bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-slate-900">部署一覧</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              部署を選択してから、右のロケーションをクリックしてください。
-            </p>
+        <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">部署一覧</h2>
+              <p className="text-sm text-slate-500">
+                部署チップを掴んで、下のマップへドロップしてください。
+              </p>
+            </div>
 
-            <div className="mt-5 max-h-[620px] space-y-3 overflow-y-auto pr-2">
-              {loading ? (
-                <p className="text-slate-500">読み込み中...</p>
-              ) : departments.length === 0 ? (
-                <p className="text-slate-500">部署がありません。</p>
-              ) : (
-                departments.map((item) => {
-                  const assigned = getAssignedLocation(item.department);
+            {selectedCompany && (
+              <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
+                {selectedCompany.name}
+              </div>
+            )}
+          </div>
 
-                  return (
-                    <button
-                      key={item.department}
-                      onClick={() => setSelectedDepartment(item.department)}
-                      className={`w-full rounded-2xl border p-4 text-left transition ${
-                        selectedDepartment === item.department
-                          ? "border-blue-600 bg-blue-50"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-bold text-slate-900">
-                            {item.department}
-                          </p>
-                          <p className="text-sm text-slate-500">
-                            {item.count}名
-                          </p>
-                        </div>
+          {loading ? (
+            <p className="text-slate-500">読み込み中...</p>
+          ) : departments.length === 0 ? (
+            <p className="text-slate-500">部署がありません。</p>
+          ) : (
+            <div className="flex max-h-40 flex-wrap gap-3 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              {departments.map((item) => {
+                const assigned = getAssignedLocation(item.department);
+                const isSelected = selectedDepartment === item.department;
+                const isDragging = draggingDepartment === item.department;
 
-                        {assigned?.locations && (
-                          <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
-                            {assigned.locations.code}
-                          </span>
-                        )}
-                      </div>
+                return (
+                  <div
+                    key={item.department}
+                    draggable
+                    onDragStart={(event) =>
+                      handleDepartmentDragStart(event, item.department)
+                    }
+                    onDragEnd={handleDepartmentDragEnd}
+                    onClick={() => setSelectedDepartment(item.department)}
+                    className={`flex cursor-grab select-none items-center gap-3 rounded-full border px-4 py-3 text-sm shadow-sm transition active:cursor-grabbing ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-slate-200 bg-white hover:bg-slate-100"
+                    } ${isDragging ? "opacity-50" : ""}`}
+                  >
+                    <div>
+                      <p className="font-bold text-slate-900">
+                        {item.department}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {item.count}名
+                      </p>
+                    </div>
 
-                      {assigned?.locations && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            unassignDepartment(item.department);
-                          }}
-                          className="mt-3 rounded-lg bg-red-50 px-3 py-1 text-xs font-bold text-red-700"
-                        >
-                          割当解除
-                        </button>
-                      )}
-                    </button>
-                  );
-                })
-              )}
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
+                      {assigned?.locations?.code ?? "未設定"}
+                    </span>
+
+                    {assigned?.locations && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          unassignDepartment(item.department);
+                        }}
+                        className="rounded-full bg-red-50 px-2 py-1 text-xs font-bold text-red-700"
+                      >
+                        解除
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">
+                保管ロケーションマップ
+              </h2>
+              <p className="text-sm text-slate-500">
+                選択中の部署：
+                <span className="font-bold text-blue-700">
+                  {selectedDepartment || "未選択"}
+                </span>
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
+              選択中ロケーション：{selectedLocationCode || "未選択"}
             </div>
           </div>
 
-          <div className="rounded-2xl bg-white p-6 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  保管ロケーションマップ
-                </h2>
-                <p className="text-sm text-slate-500">
-                  選択中の部署：
-                  <span className="font-bold text-blue-700">
-                    {selectedDepartment || "未選択"}
-                  </span>
-                </p>
-              </div>
-
-              {selectedCompany && (
-                <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
-                  {selectedCompany.name}
-                </div>
-              )}
-            </div>
-
+          <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
             <div className="relative h-[650px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
               <div className="absolute left-6 top-6 z-10 rounded-xl bg-white px-4 py-2 text-sm font-bold shadow-sm">
                 荷捌き場 / 保管エリア
@@ -393,52 +483,53 @@ export default function AdminDepartmentLocationsPage() {
                   getAssignedDepartmentsByLocation(layout.code);
 
                 const isSelected = selectedLocationCode === layout.code;
+                const isHover = hoverLocationCode === layout.code;
 
                 return (
                   <div
                     key={layout.code}
-                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    onDragOver={(event) =>
+                      handleLocationDragOver(event, layout.code)
+                    }
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setHoverLocationCode(layout.code);
+                    }}
+                    onDragLeave={() => setHoverLocationCode("")}
+                    onDrop={(event) => handleLocationDrop(event, layout.code)}
+                    onClick={() => handleLocationClick(layout.code)}
+                    className={`absolute flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 cursor-pointer flex-col items-center justify-center rounded-xl border-2 text-sm font-bold shadow-sm transition hover:scale-105 ${
+                      isHover
+                        ? "border-green-700 bg-green-500 text-white"
+                        : isSelected
+                          ? "border-blue-800 bg-blue-700 text-white"
+                          : assignedDepartments.length > 0
+                            ? "border-blue-600 bg-blue-500 text-white"
+                            : "border-slate-300 bg-white text-slate-900"
+                    }`}
                     style={{
                       left: `${layout.x}%`,
                       top: `${layout.y}%`,
                     }}
                   >
-                    <button
-                      onClick={() => {
-                        setSelectedLocationCode(layout.code);
+                    <span>{layout.code}</span>
 
-                        if (selectedDepartment) {
-                          assignDepartmentToLocation(
-                            selectedDepartment,
-                            layout.code
-                          );
-                        }
-                      }}
-                      className={`flex h-16 w-16 flex-col items-center justify-center rounded-xl border-2 text-sm font-bold shadow-sm transition hover:scale-105 ${
-                        isSelected
-                          ? "border-blue-800 bg-blue-700 text-white"
-                          : assignedDepartments.length > 0
-                            ? "border-blue-600 bg-blue-500 text-white"
-                            : "border-slate-300 bg-white text-slate-900"
-                      }`}
-                    >
-                      <span>{layout.code}</span>
-                      {assignedDepartments.length > 0 && (
-                        <span className="mt-1 text-[10px]">
-                          {assignedDepartments.length}部署
-                        </span>
-                      )}
-                    </button>
+                    {assignedDepartments.length > 0 && (
+                      <span className="mt-1 text-[10px]">
+                        {assignedDepartments.length}部署
+                      </span>
+                    )}
                   </div>
                 );
               })}
 
               <div className="absolute bottom-6 left-6 rounded-xl bg-white px-4 py-2 text-xs text-slate-500 shadow-sm">
-                ※ 青色：部署割当あり
+                ※ 青色：部署割当あり / 緑色：ドロップ先
               </div>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-slate-200 p-5">
+            <div className="rounded-2xl border border-slate-200 p-5">
               <h3 className="font-bold text-slate-900">
                 選択中ロケーション
               </h3>
@@ -447,41 +538,38 @@ export default function AdminDepartmentLocationsPage() {
                 {selectedLocationCode || "未選択"}
               </p>
 
-              <div className="mt-4 max-h-48 space-y-2 overflow-y-auto pr-2">
+              <div className="mt-4 max-h-[520px] space-y-2 overflow-y-auto pr-2">
                 {!selectedLocationCode ? (
                   <p className="text-sm text-slate-500">
                     ロケーションをクリックしてください。
                   </p>
-                ) : getAssignedDepartmentsByLocation(selectedLocationCode)
-                    .length === 0 ? (
+                ) : selectedLocationDepartments.length === 0 ? (
                   <p className="text-sm text-slate-500">
                     このロケーションに割当された部署はありません。
                   </p>
                 ) : (
-                  getAssignedDepartmentsByLocation(selectedLocationCode).map(
-                    (item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3"
-                      >
-                        <div>
-                          <p className="font-bold text-slate-900">
-                            {item.department}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {selectedCompany?.name ?? "-"}
-                          </p>
-                        </div>
-
-                        <button
-                          onClick={() => unassignDepartment(item.department)}
-                          className="rounded-lg bg-red-50 px-3 py-1 text-xs font-bold text-red-700"
-                        >
-                          解除
-                        </button>
+                  selectedLocationDepartments.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3"
+                    >
+                      <div>
+                        <p className="font-bold text-slate-900">
+                          {item.department}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {selectedCompany?.name ?? "-"}
+                        </p>
                       </div>
-                    )
-                  )
+
+                      <button
+                        onClick={() => unassignDepartment(item.department)}
+                        className="rounded-lg bg-red-50 px-3 py-1 text-xs font-bold text-red-700"
+                      >
+                        解除
+                      </button>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
