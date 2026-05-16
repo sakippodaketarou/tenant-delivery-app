@@ -187,68 +187,61 @@ export default function AdminDepartmentLocationsPage() {
   };
 
   const assignDepartmentToLocation = async (
-    department: string,
-    locationCode: string
-  ) => {
-    if (!selectedCompanyId) {
-      alert("会社を選択してください。");
-      return;
-    }
+  department: string,
+  locationCode: string
+) => {
+  if (!selectedCompanyId) {
+    alert("会社を選択してください。");
+    return;
+  }
 
-    if (!department) {
-      alert("部署を選択してください。");
-      return;
-    }
+  if (!department) {
+    alert("部署を選択してください。");
+    return;
+  }
 
-    const location = getLocationByCode(locationCode);
+  const location = getLocationByCode(locationCode);
 
-    if (!location) {
-      alert("ロケーションが見つかりません。");
-      return;
-    }
+  if (!location) {
+    alert("ロケーションが見つかりません。");
+    return;
+  }
 
-    const ok = confirm(
-      `${selectedCompany?.name ?? ""} / ${department} を ${locationCode} に割り当てますか？`
-    );
+  const ok = confirm(
+    `${selectedCompany?.name ?? ""} / ${department} を ${locationCode} に割り当てますか？`
+  );
 
-    if (!ok) {
-      setDraggingDepartment("");
-      setHoverLocationCode("");
-      return;
-    }
+  if (!ok) {
+    setDraggingDepartment("");
+    setHoverLocationCode("");
+    return;
+  }
 
-    const { error: deleteError } = await supabase
-      .from("department_locations")
-      .delete()
-      .eq("company_id", selectedCompanyId)
-      .eq("department", department);
-
-    if (deleteError) {
-      alert("既存割当削除エラー：" + deleteError.message);
-      return;
-    }
-
-    const { error: insertError } = await supabase
-      .from("department_locations")
-      .insert({
+  const { error } = await supabase
+    .from("department_locations")
+    .upsert(
+      {
         company_id: selectedCompanyId,
         department,
         location_id: location.id,
-      });
+      },
+      {
+        onConflict: "company_id,department",
+      }
+    );
 
-    if (insertError) {
-      alert("割当登録エラー：" + insertError.message);
-      return;
-    }
+  if (error) {
+    alert("割当登録エラー：" + error.message);
+    return;
+  }
 
-    setSelectedDepartment("");
-    setSelectedLocationCode(locationCode);
-    setDraggingDepartment("");
-    setHoverLocationCode("");
+  setSelectedDepartment("");
+  setSelectedLocationCode(locationCode);
+  setDraggingDepartment("");
+  setHoverLocationCode("");
 
-    await fetchData();
-  };
-
+  await fetchData();
+};
   const unassignDepartment = async (department: string) => {
     const ok = confirm(`${department} のロケーション割当を解除しますか？`);
 
